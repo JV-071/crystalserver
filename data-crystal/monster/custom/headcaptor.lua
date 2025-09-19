@@ -5,11 +5,11 @@ monster.description = "a headcaptor"
 monster.experience = 8200
 monster.outfit = {
 lookType = 279,
-lookHead = 94,
-lookBody = 98,
-lookLegs = 94,
-lookFeet = 112,
-lookAddons = 3,
+lookHead = 116,
+lookBody = 101,
+lookLegs = 0,
+lookFeet = 0,
+lookAddons = 2,
 lookMount = 0
 }
 
