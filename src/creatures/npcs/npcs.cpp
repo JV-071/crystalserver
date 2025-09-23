@@ -122,20 +122,25 @@ bool Npcs::load(bool loadLibs /* = true*/, bool loadNpcs /* = true*/, bool reloa
 	return false;
 }
 
-bool Npcs::reload() {
-	// Load the "npclib" folder
-	if (load(true, false, true)) {
-		// Load the npcs scripts folder
-		if (!load(false, true, true)) {
-			return false;
-		}
-
-		npcs.clear();
-		scriptInterface.reset();
-		g_game().resetNpcs();
-		return true;
-	}
-	return false;
+bool Npcs::reload() {  
+    // 1. Primeiro limpar os tipos existentes  
+    npcs.clear();  
+      
+    // 2. Resetar a interface de script  
+    scriptInterface.reset();  
+      
+    // 3. Resetar os NPCs do jogo  
+    g_game().resetNpcs();  
+      
+    // 4. Carregar as bibliotecas  
+    if (load(true, false, true)) {  
+        // 5. Carregar os scripts dos NPCs  
+        if (!load(false, true, true)) {  
+            return false;  
+        }  
+        return true;  
+    }  
+    return false;  
 }
 
 Npcs &Npcs::getInstance() {
