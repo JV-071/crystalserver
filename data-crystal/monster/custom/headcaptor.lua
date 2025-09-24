@@ -26,7 +26,7 @@ monster.flags = {
 }  
   
 monster.attacks = {  
-	{ name = "combat", interval = 1, chance = 100, type = COMBAT_DEATHDAMAGE, minDamage = -250, maxDamage = -250, range = 7, shootEffect = CONST_ANI_SUDDENDEATH, effect = CONST_ME_MORTAREA, target = true }
+	{ name = "combat", interval = 1, chance = 100, type = COMBAT_DEATHDAMAGE, minDamage = -250, maxDamage = -250, range = 7, shootEffect = CONST_ANI_SUDDENDEATH, effect = CONST_ME_MORTAREA, target = true },  
 }  
   
 monster.loot = {}  
