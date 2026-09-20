@@ -3414,30 +3414,30 @@ void ProtocolGame::parseGreet(NetworkMessage &msg) {
 }
 
 void ProtocolGame::parseOfferDescription(NetworkMessage &msg) {
-    const auto offerId = msg.get<uint32_t>();
-    auto &scriptInterface = g_luaEnvironment();
+	const auto offerId = msg.get<uint32_t>();
+	auto &scriptInterface = g_luaEnvironment();
 
-    if (!LuaScriptInterface::reserveScriptEnv()) {
-        g_logger().error("[{}] Call stack overflow for player {}", __FUNCTION__, player ? player->getName() : "<unknown>");
-        return;
-    }
+	if (!LuaScriptInterface::reserveScriptEnv()) {
+		g_logger().error("[{}] Call stack overflow for player {}", __FUNCTION__, player ? player->getName() : "<unknown>");
+		return;
+	}
 
-    ScriptEnvironment* env = LuaScriptInterface::getScriptEnv();
-    env->setScriptId(0, &scriptInterface);
+	ScriptEnvironment* env = LuaScriptInterface::getScriptEnv();
+	env->setScriptId(0, &scriptInterface);
 
-    lua_State* L = scriptInterface.getLuaState();
-    lua_getglobal(L, "sendRequestedOfferDescription");
-    if (!lua_isfunction(L, -1)) {
-        lua_pop(L, 1);
-        LuaScriptInterface::resetScriptEnv();
-        g_logger().error("[{}] Lua function sendRequestedOfferDescription is not loaded", __FUNCTION__);
-        return;
-    }
+	lua_State* L = scriptInterface.getLuaState();
+	lua_getglobal(L, "sendRequestedOfferDescription");
+	if (!lua_isfunction(L, -1)) {
+		lua_pop(L, 1);
+		LuaScriptInterface::resetScriptEnv();
+		g_logger().error("[{}] Lua function sendRequestedOfferDescription is not loaded", __FUNCTION__);
+		return;
+	}
 
-    LuaScriptInterface::pushUserdata<Player>(L, player);
-    LuaScriptInterface::setMetatable(L, -1, "Player");
-    lua_pushinteger(L, offerId);
-    scriptInterface.callVoidFunction(2);
+	LuaScriptInterface::pushUserdata<Player>(L, player);
+	LuaScriptInterface::setMetatable(L, -1, "Player");
+	lua_pushinteger(L, offerId);
+	scriptInterface.callVoidFunction(2);
 }
 
 void ProtocolGame::parsePreyAction(NetworkMessage &msg) {

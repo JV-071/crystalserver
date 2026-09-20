@@ -1359,22 +1359,22 @@ GameStore.getOfferById = function(id)
 end
 
 function sendRequestedOfferDescription(player, offerId)
-    if not player then
-        return
-    end
+	if not player then
+		return
+	end
 
-    local offer = GameStore.getOfferById(offerId)
-    if not offer then
-        sendOfferDescription(player, offerId, "")
-        return
-    end
+	local offer = GameStore.getOfferById(offerId)
+	if not offer then
+		sendOfferDescription(player, offerId, "")
+		return
+	end
 
-    local description = offer.description
-    if not description or description == "" then
-        description = GameStore.getDefaultDescription(offer.type, offer.count)
-    end
+	local description = offer.description
+	if not description or description == "" then
+		description = GameStore.getDefaultDescription(offer.type, offer.count)
+	end
 
-    sendOfferDescription(player, offerId, description or "")
+	sendOfferDescription(player, offerId, description or "")
 end
 
 -- Using for multi offer
