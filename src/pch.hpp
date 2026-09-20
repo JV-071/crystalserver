@@ -130,7 +130,7 @@ format_as(E e) {
 #include <mio/mmap.hpp>
 
 // MySQL
-#if __has_include("<mysql.h>")
+#if __has_include(<mysql.h>)
 	#include <mysql.h>
 #else
 	#include <mysql/mysql.h>
