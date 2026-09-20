@@ -1358,6 +1358,25 @@ GameStore.getOfferById = function(id)
 	return nil
 end
 
+function sendRequestedOfferDescription(player, offerId)
+    if not player then
+        return
+    end
+
+    local offer = GameStore.getOfferById(offerId)
+    if not offer then
+        sendOfferDescription(player, offerId, "")
+        return
+    end
+
+    local description = offer.description
+    if not description or description == "" then
+        description = GameStore.getDefaultDescription(offer.type, offer.count)
+    end
+
+    sendOfferDescription(player, offerId, description or "")
+end
+
 -- Using for multi offer
 function GameStore.getOffersByName(name)
 	local offers = {}

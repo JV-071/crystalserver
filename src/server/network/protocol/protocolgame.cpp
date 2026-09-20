@@ -62,6 +62,7 @@
 #include "items/weapons/weapons.hpp"
 #include "lua/creature/creatureevent.hpp"
 #include "lua/modules/modules.hpp"
+#include "lua/scripts/lua_environment.hpp"
 #include "server/network/message/outputmessage.hpp"
 #include "utils/tools.hpp"
 #include "creatures/players/vocations/vocation.hpp"
@@ -1218,6 +1219,9 @@ void ProtocolGame::parsePacketFromDispatcher(NetworkMessage &msg, uint8_t recvby
 		case 0x62:
 			parseSaveWheel(msg);
 			break;
+		case 0x63:
+			parseOrganizeContainer(msg);
+			break;
 		case 0x64:
 			parseAutoWalk(msg);
 			break;
@@ -1570,7 +1574,9 @@ void ProtocolGame::parsePacketFromDispatcher(NetworkMessage &msg, uint8_t recvby
 		case 0xF1:
 			parseQuestLine(msg);
 			break;
-		// case 0xF2: parseRuleViolationReport(msg); break;
+		case 0xF2:
+			parseRuleViolationReport(msg);
+			break;
 		case 0xF3: /* get object info */
 			break;
 		case 0xF4:
@@ -2349,19 +2355,45 @@ void ProtocolGame::parseWrapableItem(NetworkMessage &msg) {
 	g_game().playerWrapableItem(player->getID(), pos, stackpos, itemId);
 }
 
+void ProtocolGame::parseOrganizeContainer(NetworkMessage &msg) {
+	const uint8_t containerId = msg.getByte();
+	const bool moveToObtain = msg.getByte() != 0;
+	const uint8_t sortMode = msg.getByte();
+	const bool containersFirst = msg.getByte() != 0;
+	const bool nestedContainers = msg.getByte() != 0;
+	msg.getByte(); // reserved
+
+	if (sortMode > 7) {
+		return;
+	}
+
+	const auto &container = player->getContainerByID(containerId);
+	if (!container) {
+		return;
+	}
+
+	container->sortItems(sortMode, containersFirst || moveToObtain, nestedContainers || (moveToObtain && sortMode != 0));
+	for (uint8_t cid = 0; cid < 16; ++cid) {
+		if (const auto &openContainer = player->getContainerByID(cid)) {
+			player->sendContainer(cid, openContainer, openContainer->hasParent(), player->getContainerIndex(cid));
+		}
+	}
+}
 void ProtocolGame::parseInspectionObject(NetworkMessage &msg) {
 	if (oldProtocol) {
 		return;
 	}
 
-	uint8_t inspectionType = msg.getByte();
+	const uint8_t inspectionType = msg.getByte();
 	if (inspectionType == INSPECT_NORMALOBJECT) {
-		Position pos = msg.getPosition();
+		const Position pos = msg.getPosition();
 		g_game().playerInspectItem(player, pos);
+	} else if (inspectionType == INSPECT_PLAYERTRADE) {
+		g_game().playerInspectTrade(player, msg.getByte() != 0);
 	} else if (inspectionType == INSPECT_NPCTRADE || inspectionType == INSPECT_CYCLOPEDIA || inspectionType == INSPECT_PROFICIENCY) {
-		auto itemId = msg.get<uint16_t>();
-		uint16_t itemCount = msg.getByte();
-		g_game().playerInspectItem(player, itemId, static_cast<int8_t>(itemCount), inspectionType);
+		const auto itemId = msg.get<uint16_t>();
+		const uint8_t itemCount = msg.getByte();
+		g_game().playerInspectItem(player, itemId, itemCount, inspectionType);
 	}
 }
 
@@ -3382,8 +3414,30 @@ void ProtocolGame::parseGreet(NetworkMessage &msg) {
 }
 
 void ProtocolGame::parseOfferDescription(NetworkMessage &msg) {
-	auto offerId = msg.get<uint32_t>();
-	g_logger().debug("[{}] offer id: {}", __FUNCTION__, offerId);
+    const auto offerId = msg.get<uint32_t>();
+    auto &scriptInterface = g_luaEnvironment();
+
+    if (!LuaScriptInterface::reserveScriptEnv()) {
+        g_logger().error("[{}] Call stack overflow for player {}", __FUNCTION__, player ? player->getName() : "<unknown>");
+        return;
+    }
+
+    ScriptEnvironment* env = LuaScriptInterface::getScriptEnv();
+    env->setScriptId(0, &scriptInterface);
+
+    lua_State* L = scriptInterface.getLuaState();
+    lua_getglobal(L, "sendRequestedOfferDescription");
+    if (!lua_isfunction(L, -1)) {
+        lua_pop(L, 1);
+        LuaScriptInterface::resetScriptEnv();
+        g_logger().error("[{}] Lua function sendRequestedOfferDescription is not loaded", __FUNCTION__);
+        return;
+    }
+
+    LuaScriptInterface::pushUserdata<Player>(L, player);
+    LuaScriptInterface::setMetatable(L, -1, "Player");
+    lua_pushinteger(L, offerId);
+    scriptInterface.callVoidFunction(2);
 }
 
 void ProtocolGame::parsePreyAction(NetworkMessage &msg) {

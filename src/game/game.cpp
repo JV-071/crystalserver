@@ -1503,6 +1503,20 @@ void Game::playerInspectItem(const std::shared_ptr<Player> &player, uint16_t ite
 	player->sendItemInspection(itemId, itemCount, nullptr, inspectionType);
 }
 
+void Game::playerInspectTrade(const std::shared_ptr<Player> &player, bool counterOffer) {
+	metrics::method_latency measure(__METRICS_METHOD_NAME__);
+	if (!player || !player->tradePartner) {
+		return;
+	}
+
+	const auto &owner = counterOffer ? player->tradePartner : player;
+	const auto &item = owner->getTradeItem();
+	if (!item) {
+		return;
+	}
+
+	player->sendItemInspection(item->getID(), static_cast<uint8_t>(item->getItemCount()), item, INSPECT_PLAYERTRADE);
+}
 FILELOADER_ERRORS Game::loadAppearanceProtobuf(const std::string &file) {
 	using namespace Crystal::protobuf::appearances;
 
