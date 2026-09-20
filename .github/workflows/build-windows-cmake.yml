@@ -6,81 +6,131 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "src/**"
+      - ".github/workflows/build-windows-cmake.yml"
+      - "vcpkg.json"
+      - "CMakePresets.json"
   merge_group:
   push:
     paths:
       - "src/**"
+      - ".github/workflows/build-windows-cmake.yml"
+      - "vcpkg.json"
+      - "CMakePresets.json"
     branches:
       - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 2
-  MAKEFLAGS: "-j 2"
-jobs:
-  cancel-runs:
-    if: github.event_name == 'pull_request' && github.ref != 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.9.1
-        with:
-          access_token: ${{ github.token }}
+  VCPKG_MAX_CONCURRENCY: 2
+  VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg/downloads
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite"
+  SCCACHE_LOG: warn
+  SCCACHE_ERROR_LOG: ${{ github.workspace }}/sccache-error.log
 
+jobs:
   job:
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
-    name: ${{ matrix.os }}-${{ matrix.buildtype }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-2022]
-        buildtype: [windows-release]
-        include:
-          - os: windows-2022
-            triplet: x64-windows-static
-            packages: >
-              sccache
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
+    name: windows-2022-windows-release
+    runs-on: windows-2022
+    timeout-minutes: 180
     steps:
       - name: Checkout repository
-        uses: actions/checkout@main
+        uses: actions/checkout@v7
 
-      - name: CCache
-        uses: hendrikmuhs/ccache-action@main
+      - name: Read pinned vcpkg baseline
+        id: baseline
+        shell: pwsh
+        run: |
+          $json = Get-Content vcpkg.json -Raw | ConvertFrom-Json
+          $commit = $json.'builtin-baseline'
+          if ($commit -notmatch '^[0-9a-f]{40}$') {
+            throw 'vcpkg builtin-baseline must be a full 40-character commit SHA.'
+          }
+          "commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          New-Item -ItemType Directory -Force -Path .vcpkg-binary-cache, vcpkg/downloads | Out-Null
+
+      - name: Restore compiled dependency cache
+        id: dependencies
+        uses: actions/cache/restore@v6
         with:
-          max-size: "1G"
-          variant: "sccache"
-          key: ccache-${{ matrix.os }}-${{ matrix.buildtype }}
+          path: |
+            ${{ github.workspace }}/.vcpkg-binary-cache
+            ${{ github.workspace }}/vcpkg/downloads
+          key: crystal-vcpkg-windows-static-${{ steps.baseline.outputs.commit }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ccache-${{ matrix.os }}
+            crystal-vcpkg-windows-static-${{ steps.baseline.outputs.commit }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}-v1-
+            crystal-vcpkg-windows-static-${{ steps.baseline.outputs.commit }}-${{ hashFiles('vcpkg.json') }}-
+            crystal-vcpkg-windows-static-
+
+      - name: Configure compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.23
+        with:
+          max-size: 1G
+          variant: sccache
+          key: crystal-windows-release
+          restore-keys: crystal-windows
 
       - name: Remove Windows pre-installed MySQL
-        if: contains( matrix.os, 'windows')
-        run: rm -r -fo C:/mysql*
+        shell: pwsh
+        run: Remove-Item -Recurse -Force C:\mysql* -ErrorAction SilentlyContinue
 
-      - name: Restore artifacts and install vcpkg
-        id: vcpkg-step
-        run: |
-          $json=Get-Content vcpkg.json -Raw | ConvertFrom-Json
-          $vcpkgCommitId=$json.'builtin-baseline'
-          Write-Host "vcpkg commit ID: $vcpkgCommitId"
-          echo "VCPKG_GIT_COMMIT_ID=$vcpkgCommitId" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Get vcpkg commit id from vcpkg.json
-        uses: lukka/run-vcpkg@main
+      - name: Install pinned vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
         with:
-          vcpkgGitURL: "https://github.com/microsoft/vcpkg.git"
-          vcpkgGitCommitId: ${{ env.VCPKG_GIT_COMMIT_ID }}
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          vcpkgGitCommitId: ${{ steps.baseline.outputs.commit }}
+          vcpkgJsonGlob: vcpkg.json
 
-      - name: Get latest CMake and ninja
-        uses: lukka/get-cmake@main
+      - name: Set up CMake and Ninja
+        uses: lukka/get-cmake@v3.31.6
 
-      - name: Run CMake
-        uses: lukka/run-cmake@main
+      - name: Configure and restore dependencies
+        id: configure
+        shell: pwsh
+        run: cmake --preset windows-release
+
+      - name: Save compiled dependency cache
+        if: ${{ !cancelled() && steps.configure.outcome == 'success' && steps.dependencies.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
         with:
-          configurePreset: ${{ matrix.buildtype }}
-          buildPreset: ${{ matrix.buildtype }}
-
-      - name: Create and Upload Artifact
-        uses: actions/upload-artifact@main
-        with:
-          name: crystalserver-${{ matrix.buildtype }}-${{ github.sha }}
           path: |
-            ${{ github.workspace }}/build/${{ matrix.buildtype }}/bin/
+            ${{ github.workspace }}/.vcpkg-binary-cache
+            ${{ github.workspace }}/vcpkg/downloads
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+
+      - name: Build server
+        shell: pwsh
+        run: cmake --build --preset windows-release --parallel 2
+
+      - name: Record compiler cache statistics
+        if: always()
+        shell: pwsh
+        run: |
+          sccache --show-stats | Tee-Object -FilePath sccache-stats.txt
+          Get-Content sccache-stats.txt >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostics-crystalserver-windows-release-${{ github.sha }}
+          path: |
+            sccache-stats.txt
+            sccache-error.log
+            build/windows-release/CMakeCache.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: crystalserver-windows-release-${{ github.sha }}
+          path: ${{ github.workspace }}/build/windows-release/bin/
+          if-no-files-found: error
