@@ -9,8 +9,15 @@ function Castlemania.onLogin(player)
 		return true
 	end
 
-	local BB = Storage.Quest.U8_4.BloodBrothers
-	local VH = Storage.Quest.U8_2.VampireHunterQuest
+	-- Castlemania belongs to the global datapack. Other datapacks, such as
+	-- data-crystal, intentionally do not define these quest storages even though
+	-- this shared creature event is still loaded and registered on login.
+	local questStorage = Storage and Storage.Quest
+	local BB = questStorage and questStorage.U8_4 and questStorage.U8_4.BloodBrothers
+	local VH = questStorage and questStorage.U8_2 and questStorage.U8_2.VampireHunterQuest
+	if not BB or not VH then
+		return true
+	end
 
 	if player:getStorageValue(BB.Mission10) < 1 then
 		return true

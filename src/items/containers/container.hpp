@@ -234,6 +234,7 @@ public:
 	bool countsToLootAnalyzerBalance() const;
 	bool hasParent();
 	void addItem(const std::shared_ptr<Item> &item);
+	void sortItems(uint8_t sortMode, bool containersFirst, bool nestedContainers);
 	void getStowableItems(StashContainerList &items) const;
 	bool isStoreInbox() const;
 	bool isStoreInboxFiltered() const;

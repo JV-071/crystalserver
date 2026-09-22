@@ -161,6 +161,60 @@ bool Container::hasParent() {
 	return getID() != ITEM_BROWSEFIELD && !isPlayer;
 }
 
+void Container::sortItems(uint8_t sortMode, bool containersFirst, bool nestedContainers) {
+	const bool descending = (sortMode % 2) != 0;
+	const uint8_t criterion = sortMode / 2;
+
+	auto compare = [criterion, descending, containersFirst](const std::shared_ptr<Item> &left, const std::shared_ptr<Item> &right) {
+		if (containersFirst) {
+			const bool leftContainer = left && left->getContainer();
+			const bool rightContainer = right && right->getContainer();
+			if (leftContainer != rightContainer) {
+				return leftContainer;
+			}
+		}
+
+		if (!left || !right) {
+			return static_cast<bool>(left);
+		}
+
+		auto less = false;
+		auto greater = false;
+		switch (criterion) {
+			case 0:
+				less = left->getName() < right->getName();
+				greater = left->getName() > right->getName();
+				break;
+			case 1:
+				less = left->getWeight() < right->getWeight();
+				greater = left->getWeight() > right->getWeight();
+				break;
+			case 2: {
+				const int32_t leftDuration = left->getDuration() > 0 ? left->getDuration() : INT32_MAX;
+				const int32_t rightDuration = right->getDuration() > 0 ? right->getDuration() : INT32_MAX;
+				less = leftDuration < rightDuration;
+				greater = leftDuration > rightDuration;
+				break;
+			}
+			case 3:
+				less = left->getItemCount() < right->getItemCount();
+				greater = left->getItemCount() > right->getItemCount();
+				break;
+			default:
+				return false;
+		}
+		return descending ? greater : less;
+	};
+
+	std::stable_sort(itemlist.begin(), itemlist.end(), compare);
+	if (nestedContainers) {
+		for (const auto &item : itemlist) {
+			if (const auto &container = item ? item->getContainer() : nullptr) {
+				container->sortItems(sortMode, containersFirst, true);
+			}
+		}
+	}
+}
 void Container::addItem(const std::shared_ptr<Item> &item) {
 	itemlist.push_back(item);
 	item->setParent(getContainer());
