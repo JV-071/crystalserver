@@ -3951,7 +3951,8 @@ void ProtocolGame::addCreatureIcon(NetworkMessage &msg, const std::shared_ptr<Cr
 }
 
 void ProtocolGame::sendCreatureIcon(const std::shared_ptr<Creature> &creature) {
-	if (!creature || !player || oldProtocol) {
+	if (!creature || !player || oldProtocol || !canSee(creature)
+	    || !knownCreatureSet.contains(creature->getID())) {
 		return;
 	}
 

@@ -7180,7 +7180,10 @@ void Game::changeLight(const std::shared_ptr<Creature> &creature) {
 void Game::updateCreatureIcon(const std::shared_ptr<Creature> &creature) {
 	// Send to clients
 	for (const auto &spectator : Spectators().find<Player>(creature->getPosition(), true)) {
-		spectator->getPlayer()->sendCreatureIcon(creature);
+		const auto &viewer = spectator->getPlayer();
+		if (viewer && viewer->canSeeCreature(creature)) {
+			viewer->sendCreatureIcon(creature);
+		}
 	}
 }
 
