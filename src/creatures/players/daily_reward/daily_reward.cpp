@@ -461,6 +461,7 @@ void DailyRewards::scheduleStaminaRegen(uint32_t playerId, uint32_t delayMs) {
 				return;
 			}
 
+			g_dailyRewards().refreshStreak(player);
 			// Resting area bonus of Premium accounts
 			if (!hasDailyRewardPremium(player)) {
 				g_dailyRewards().stopPlayerBonuses(playerId);
@@ -502,6 +503,7 @@ void DailyRewards::scheduleSoulRegen(uint32_t playerId, uint32_t delayMs) {
 				return;
 			}
 
+			g_dailyRewards().refreshStreak(player);
 			// Resting area bonus of Premium accounts
 			if (!hasDailyRewardPremium(player)) {
 				g_dailyRewards().stopPlayerBonuses(playerId);
@@ -534,6 +536,7 @@ void DailyRewards::stopPlayerBonuses(uint32_t playerId) {
 }
 
 void DailyRewards::loadPlayerBonuses(const std::shared_ptr<Player> &player) {
+	refreshStreak(player);
 	// Winter Update 2026: the resting area bonuses no longer depend on the reward streak.
 	// Premium: hit point, mana, stamina and soul regeneration, with doubled hit point and mana regeneration.
 	// Free: hit point and mana regeneration (both handled in ConditionRegeneration::executeCondition).
@@ -552,38 +555,51 @@ void DailyRewards::loadPlayerBonuses(const std::shared_ptr<Player> &player) {
 	scheduleSoulRegen(player->getID(), soulDelay);
 }
 
+void DailyRewards::refreshStreak(const std::shared_ptr<Player> &player) const {
+	const uint32_t nextReward = getNextRewardTime(player);
+	if (nextReward == 0 || serverTimeThreshold == 0) {
+		return;
+	}
+
+	const time_t now = std::time(nullptr);
+	// The claim stays open for serverTimeThreshold seconds after nextReward.
+	if (now < static_cast<time_t>(nextReward) + static_cast<time_t>(serverTimeThreshold)) {
+		return;
+	}
+
+	if (player->getStorageValue(storages.notifyReset) == static_cast<int32_t>(nextReward)) {
+		return; // the streak was already lost in this period
+	}
+
+	const auto missedDays = static_cast<uint32_t>((now - static_cast<time_t>(nextReward)) / serverTimeThreshold);
+	const uint32_t jokers = getJokerTokens(player);
+	if (jokers >= missedDays) {
+		setJokerTokens(player, static_cast<int32_t>(jokers - missedDays));
+		// The jokers stand in for the missed claims: move the open claim forward.
+		setNextRewardTime(player, static_cast<int32_t>(nextReward + missedDays * serverTimeThreshold));
+		player->sendTextMessage(MESSAGE_LOGIN, fmt::format("You used {} joker token(s) to keep your daily reward streak.", missedDays));
+		return;
+	}
+
+	player->addStorageValue(storages.notifyReset, static_cast<int32_t>(nextReward));
+	const bool hadStreak = getStreakLevel(player) > 0;
+	setStreakLevel(player, 0);
+	if (jokers > 0) {
+		setJokerTokens(player, 0);
+	}
+	if (hadStreak) {
+		player->sendTextMessage(MESSAGE_LOGIN, "You just lost your daily reward streak.");
+	}
+}
+
 void DailyRewards::initPlayer(const std::shared_ptr<Player> &player) {
 	const time_t now = std::time(nullptr);
 
-	uint32_t nextReward = getNextRewardTime(player);
-	if (player->getDailyReward() == DAILY_REWARD_COLLECTED && nextReward == 0) {
+	if (player->getDailyReward() == DAILY_REWARD_COLLECTED && getNextRewardTime(player) == 0) {
 		setNextRewardTime(player, static_cast<int32_t>(now + serverTimeThreshold));
-		nextReward = getNextRewardTime(player);
 	}
 
-	if (nextReward > 0 && now >= nextReward) {
-		if (player->getStorageValue(storages.notifyReset) != static_cast<int32_t>(nextReward)) {
-			player->addStorageValue(storages.notifyReset, static_cast<int32_t>(nextReward));
-			int32_t missedDays = 0;
-			if (now > static_cast<time_t>(nextReward)) {
-				missedDays = static_cast<int32_t>((now - static_cast<time_t>(nextReward)) / serverTimeThreshold);
-			}
-			if (missedDays > 0) {
-				if (getJokerTokens(player) >= static_cast<uint32_t>(missedDays)) {
-					setJokerTokens(player, static_cast<int32_t>(getJokerTokens(player) - missedDays));
-					player->sendTextMessage(MESSAGE_LOGIN, fmt::format("You lost {} joker tokens to prevent loosing your streak.", missedDays));
-				} else {
-					setStreakLevel(player, 0);
-					if (player->getLastLoginSaved() > 0) {
-						if (getJokerTokens(player) > 0) {
-							setJokerTokens(player, 0);
-						}
-						player->sendTextMessage(MESSAGE_LOGIN, "You just lost your daily reward streak.");
-					}
-				}
-			}
-		}
-	}
+	refreshStreak(player);
 
 	if (isRewardTaken(player)) {
 		player->sendDailyRewardCollectionState(DAILY_REWARD_COLLECTED);
@@ -605,7 +621,12 @@ void DailyRewards::loadDailyReward(const std::shared_ptr<Player> &player, DailyR
 		return;
 	}
 
+	refreshStreak(player);
+
 	const bool rewardTaken = isRewardTaken(player);
+	// The flag is otherwise only updated at login and on a claim, so it can be stale for players
+	// who stay online until the next reward is available.
+	player->setDailyReward(rewardTaken ? DAILY_REWARD_COLLECTED : DAILY_REWARD_NOTCOLLECTED);
 	uint32_t nextRewardTime = getNextRewardTime(player);
 	if (rewardTaken && nextRewardTime == 0) {
 		nextRewardTime = static_cast<uint32_t>(std::time(nullptr) + serverTimeThreshold);
@@ -674,6 +695,8 @@ void DailyRewards::playerSelectReward(const std::shared_ptr<Player> &player, Net
 
 	// The client keeps its claim pending until the reward wall (S2C 0xE2) arrives again,
 	// so a refused claim is answered with the wall as well
+	refreshStreak(player);
+
 	if (isRewardTaken(player) && !testMode) {
 		player->sendMessageDialog("You have already collected your daily reward.");
 		loadDailyReward(player, source);
