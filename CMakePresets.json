@@ -218,10 +218,11 @@
       "name": "linux-local-debug",
       "inherits": "linux-local",
       "displayName": "Linux - local debug build for small machines",
-      "description": "Same as linux-local, as a Debug build with the debug log. Uses the release-only dependencies of linux-local.",
+      "description": "Same as linux-local, as a Debug build with the debug log. Links the debug variants of the dependencies (full x64-linux triplet, built once and cached).",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "DEBUG_LOG": "ON"
+        "DEBUG_LOG": "ON",
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
       }
     }
   ],
