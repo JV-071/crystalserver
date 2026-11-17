@@ -3,6 +3,7 @@ name: Linux build diagnostics
   push:
     branches:
     - main
+    - '15.33'
     - summer-update
     - ci/**
   pull_request: null
@@ -204,6 +205,13 @@ jobs:
         python ./ci/SummarizeBuild.py $folder build/diagnostics/build-metrics.json
         if (Test-Path "$folder/.ninja_log") { Copy-Item "$folder/.ninja_log" build/diagnostics/ninja.log }
         exit 0
+      env:
+        ACTIONS_RUNTIME_TOKEN: ''
+        ACTIONS_RESULTS_URL: ''
+    - name: Report problems as annotations
+      if: always()
+      shell: bash
+      run: python3 ci/ReportBuild.py --title "${{ matrix.preset }}" build/diagnostics/configure.log build/diagnostics/compile.log build/diagnostics/tests.log build/diagnostics/compiler-cache.txt
       env:
         ACTIONS_RUNTIME_TOKEN: ''
         ACTIONS_RESULTS_URL: ''
