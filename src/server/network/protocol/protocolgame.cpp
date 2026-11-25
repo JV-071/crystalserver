@@ -994,12 +994,8 @@ void ProtocolGame::onRecvFirstMessage(NetworkMessage &msg) {
 		password = sessionKey.substr(pos + 1);
 	}
 
-	if (!oldProtocol && operatingSystem == CLIENTOS_NEW_LINUX) {
-		// TODO: check what new info for linux is send
-		msg.getString();
-		msg.getString();
-	}
-
+	// CipSoft's login block is the same on every OS: no extra Linux strings
+	// follow the session key (CLIENTOS_NEW_LINUX included).
 	std::string characterName = msg.getString();
 
 	const auto &onlinePlayer = g_game().getPlayerByName(characterName);
@@ -2268,11 +2264,22 @@ void ProtocolGame::parseSay(NetworkMessage &msg) {
 }
 
 void ProtocolGame::parseFightModes(NetworkMessage &msg) {
-	// uint8_t rawFightMode = msg.getByte(); // 1 - offensive, 2 - balanced, 3 - defensive -- FIGHT MODE DEPRECATED FROM 15.25
+	// 15.25+ (CIP gameclient and OTC with GameTacticsWithoutFightMode) omit fight mode.
+	// oldProtocol and OTC/OTCR below 15.25 still send it first.
+	FightMode_t fightMode = FIGHTMODE_ATTACK;
+	const bool withFightMode = oldProtocol || (isOTCR && clientVersion < 1525);
+	if (withFightMode) {
+		uint8_t rawFightMode = msg.getByte(); // 1 - offensive, 2 - balanced, 3 - defensive
+		if (rawFightMode == 2) {
+			fightMode = FIGHTMODE_BALANCED;
+		} else if (rawFightMode != 1) {
+			fightMode = FIGHTMODE_DEFENSE;
+		}
+	}
 	uint8_t rawChaseMode = msg.getByte(); // 0 - stand while fightning, 1 - chase opponent
 	uint8_t rawSecureMode = msg.getByte(); // 0 - can't attack unmarked, 1 - can attack unmarked
 
-	g_game().playerSetFightModes(player->getID(), FIGHTMODE_ATTACK, rawChaseMode != 0, rawSecureMode != 0);
+	g_game().playerSetFightModes(player->getID(), fightMode, rawChaseMode != 0, rawSecureMode != 0);
 }
 
 void ProtocolGame::parseAttack(NetworkMessage &msg) {
@@ -3101,7 +3108,12 @@ void ProtocolGame::parsePartyAnalyzerAction(NetworkMessage &msg) const {
 	if (action == PARTYANALYZERACTION_RESET) {
 		party->resetAnalyzer();
 	} else if (action == PARTYANALYZERACTION_PRICETYPE) {
-		party->switchAnalyzerPriceType();
+		// CIP names the loot type (0 market, 1 leader); a message without it switches.
+		if (msg.canRead(1)) {
+			party->setAnalyzerPriceType(msg.getByte() != 0 ? LEADER_PRICE : MARKET_PRICE);
+		} else {
+			party->switchAnalyzerPriceType();
+		}
 	} else if (action == PARTYANALYZERACTION_PRICEVALUE) {
 		const auto size = msg.get<uint16_t>();
 		// each entry is u16 itemId + u64 price; reject counts the payload cannot hold
@@ -8284,7 +8296,11 @@ void ProtocolGame::sendEnterWorld() {
 void ProtocolGame::sendFightModes() {
 	NetworkMessage msg;
 	msg.addByte(0xA7);
-	msg.addByte(player->fightMode);
+	// Mirror parseFightModes: CIP gameclient 15.25+ and OTC 15.25+ omit fight mode.
+	const bool withFightMode = oldProtocol || (isOTCR && clientVersion < 1525);
+	if (withFightMode) {
+		msg.addByte(player->fightMode);
+	}
 	msg.addByte(player->chaseMode);
 	msg.addByte(player->secureMode);
 	msg.addByte(PVP_MODE_DOVE);
